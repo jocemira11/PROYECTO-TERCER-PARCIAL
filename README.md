@@ -15,3 +15,5 @@ Juego de Tetris en **C++ con SFML**, siguiendo la estructura de la PlantillaProy
 2. Compila:
    ```bash
    make
+3. Ejecuta:
+make runTetrisCreativo
