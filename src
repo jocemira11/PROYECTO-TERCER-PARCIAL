@@ -1,0 +1,265 @@
+#include "Tetris.hpp"
+#include <random>
+#include <sstream>
+
+static std::vector<Tetromino> makePieces(){
+    using V = sf::Vector2i;
+    std::vector<Tetromino> P;
+    // I
+    P.push_back({1, {
+        { V{0,1}, V{1,1}, V{2,1}, V{3,1} },
+        { V{2,0}, V{2,1}, V{2,2}, V{2,3} },
+        { V{0,2}, V{1,2}, V{2,2}, V{3,2} },
+        { V{1,0}, V{1,1}, V{1,2}, V{1,3} }
+    }, sf::Color(0, 255, 255)});
+    // O
+    P.push_back({2, {
+        { V{1,0}, V{2,0}, V{1,1}, V{2,1} },
+        { V{1,0}, V{2,0}, V{1,1}, V{2,1} },
+        { V{1,0}, V{2,0}, V{1,1}, V{2,1} },
+        { V{1,0}, V{2,0}, V{1,1}, V{2,1} }
+    }, sf::Color(255, 255, 0)});
+    // T
+    P.push_back({3, {
+        { V{1,0}, V{0,1}, V{1,1}, V{2,1} },
+        { V{1,0}, V{1,1}, V{2,1}, V{1,2} },
+        { V{0,1}, V{1,1}, V{2,1}, V{1,2} },
+        { V{1,0}, V{0,1}, V{1,1}, V{1,2} }
+    }, sf::Color(128, 0, 128)});
+    // S
+    P.push_back({4, {
+        { V{1,0}, V{2,0}, V{0,1}, V{1,1} },
+        { V{1,0}, V{1,1}, V{2,1}, V{2,2} },
+        { V{1,1}, V{2,1}, V{0,2}, V{1,2} },
+        { V{0,0}, V{0,1}, V{1,1}, V{1,2} }
+    }, sf::Color(0, 255, 0)});
+    // Z
+    P.push_back({5, {
+        { V{0,0}, V{1,0}, V{1,1}, V{2,1} },
+        { V{2,0}, V{1,1}, V{2,1}, V{1,2} },
+        { V{0,1}, V{1,1}, V{1,2}, V{2,2} },
+        { V{1,0}, V{0,1}, V{1,1}, V{0,2} }
+    }, sf::Color(255, 0, 0)});
+    // J
+    P.push_back({6, {
+        { V{0,0}, V{0,1}, V{1,1}, V{2,1} },
+        { V{1,0}, V{2,0}, V{1,1}, V{1,2} },
+        { V{0,1}, V{1,1}, V{2,1}, V{2,2} },
+        { V{1,0}, V{1,1}, V{0,2}, V{1,2} }
+    }, sf::Color(0, 0, 255)});
+    // L
+    P.push_back({7, {
+        { V{2,0}, V{0,1}, V{1,1}, V{2,1} },
+        { V{1,0}, V{1,1}, V{1,2}, V{2,2} },
+        { V{0,1}, V{1,1}, V{2,1}, V{0,2} },
+        { V{0,0}, V{1,0}, V{1,1}, V{1,2} }
+    }, sf::Color(255, 128, 0)});
+    return P;
+}
+
+Tetris::Tetris(int c, int r, int sz)
+: cols(c), rows(r), cellSize(sz),
+  grid(rows*cols),
+  rotationIndex(0),
+  fallTimer(0.f), fallInterval(0.7f),
+  paused(false), gameOver(false),
+  score(0), linesCleared(0), combo(0)
+{
+    bag = makePieces();
+    fontLoaded = font.loadFromFile("assets/textures/PixelFont.ttf");
+    if(fontLoaded){
+        uiText.setFont(font);
+        uiText.setCharacterSize(20);
+        uiText.setFillColor(sf::Color::White);
+    }
+    reset();
+}
+
+void Tetris::reset(){
+    for(auto& cell: grid){ cell.type = 0; cell.color = sf::Color::Black; }
+    next = randomFromBag();
+    spawnPiece();
+    score = 0; linesCleared = 0; combo = 0;
+    paused = false; gameOver = false;
+}
+
+Tetromino Tetris::randomFromBag(){
+    static std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<int> dist(0, (int)bag.size()-1);
+    return bag[dist(rng)];
+}
+
+void Tetris::spawnPiece(){
+    current = next;
+    next = randomFromBag();
+    rotationIndex = 0;
+    pos = {cols/2 - 2, 0};
+    if(!canMove(current, pos, rotationIndex)){
+        gameOver = true;
+    }
+}
+
+bool Tetris::canMove(const Tetromino& t, sf::Vector2i p, int rot) const{
+    for(const auto& b : t.rotations[rot]){
+        int c = p.x + b.x;
+        int r = p.y + b.y;
+        if(c < 0 || c >= cols || r < 0 || r >= rows) return false;
+        if(grid[index(c,r)].type != 0) return false;
+    }
+    return true;
+}
+
+void Tetris::lockPiece(){
+    for(const auto& b : current.rotations[rotationIndex]){
+        int c = pos.x + b.x;
+        int r = pos.y + b.y;
+        auto& cell = grid[index(c,r)];
+        cell.type = current.id;
+        cell.color = current.color;
+    }
+    clearLines();
+    spawnPiece();
+}
+
+void Tetris::applyPowerUps(int lines){
+    if(lines >= 2){
+        combo++;
+        fallInterval = std::max(0.2f, fallInterval - 0.05f);
+        score += lines * 150 * combo;
+    } else {
+        combo = 0;
+        score += lines * 100;
+    }
+}
+
+void Tetris::clearLines(){
+    int cleared = 0;
+    for(int r=0; r<rows; ++r){
+        bool full = true;
+        for(int c=0; c<cols; ++c){
+            if(grid[index(c,r)].type == 0){ full = false; break; }
+        }
+        if(full){
+            ++cleared;
+            for(int rr=r; rr>0; --rr){
+                for(int c=0; c<cols; ++c){
+                    grid[index(c,rr)] = grid[index(c,rr-1)];
+                }
+            }
+            for(int c=0; c<cols; ++c){
+                grid[index(c,0)].type = 0;
+                grid[index(c,0)].color = sf::Color::Black;
+            }
+        }
+    }
+    if(cleared > 0){
+        linesCleared += cleared;
+        applyPowerUps(cleared);
+    }
+}
+
+void Tetris::hardDrop(){
+    while(canMove(current, {pos.x, pos.y+1}, rotationIndex)){
+        pos.y++;
+    }
+    lockPiece();
+}
+
+void Tetris::softDrop(){
+    if(canMove(current, {pos.x, pos.y+1}, rotationIndex)){
+        pos.y++;
+        score += 1;
+    }
+}
+
+void Tetris::move(int dx){
+    if(canMove(current, {pos.x+dx, pos.y}, rotationIndex)){
+        pos.x += dx;
+    }
+}
+
+void Tetris::rotate(int dir){
+    int nextRot = (rotationIndex + dir + 4) % 4;
+    sf::Vector2i testPos = pos;
+    static const std::vector<sf::Vector2i> kicks = { {0,0},{-1,0},{1,0},{0,-1} };
+    for(auto k : kicks){
+        if(canMove(current, testPos + k, nextRot)){
+            rotationIndex = nextRot;
+            pos = testPos + k;
+            break;
+        }
+    }
+}
+
+void Tetris::handleEvent(const sf::Event& e){
+    if(e.type == sf::Event::KeyPressed){
+        if(e.key.code == sf::Keyboard::P) paused = !paused;
+        if(gameOver) return;
+        if(e.key.code == sf::Keyboard::Left) move(-1);
+        else if(e.key.code == sf::Keyboard::Right) move(1);
+        else if(e.key.code == sf::Keyboard::Up) rotate(+1);
+        else if(e.key.code == sf::Keyboard::Z) rotate(-1);
+        else if(e.key.code == sf::Keyboard::Down) softDrop();
+        else if(e.key.code == sf::Keyboard::Space) hardDrop();
+    }
+}
+
+void Tetris::update(float dt){
+    if(paused || gameOver) return;
+    fallTimer += dt;
+    if(fallTimer >= fallInterval){
+        fallTimer = 0.f;
+        if(canMove(current, {pos.x, pos.y+1}, rotationIndex)){
+            pos.y++;
+        } else {
+            lockPiece();
+        }
+    }
+    if(fontLoaded){
+        std::ostringstream ss;
+        ss << "Score: " << score << "  Lines: " << linesCleared
+           << "  Combo: " << combo << (paused ? "  [PAUSA]" : "")
+           << (gameOver ? "  [GAME OVER]" : "");
+        uiText.setString(ss.str());
+        uiText.setPosition(cols*cellSize + 20, 20);
+    }
+}
+
+void Tetris::drawGrid(sf::RenderWindow& window){
+    sf::RectangleShape rect(sf::Vector2f((float)cellSize-2, (float)cellSize-2));
+    for(int r=0; r<rows; ++r){
+        for(int c=0; c<cols; ++c){
+            auto cell = grid[index(c,r)];
+            rect.setPosition((float)c*cellSize, (float)r*cellSize);
+            rect.setFillColor(cell.type==0 ? sf::Color(30,30,30) : cell.color);
+            window.draw(rect);
+        }
+    }
+}
+
+void Tetris::drawPiece(sf::RenderWindow& window, const Tetromino& t, sf::Vector2i p, int rot){
+    sf::RectangleShape rect(sf::Vector2f((float)cellSize-2, (float)cellSize-2));
+    rect.setFillColor(t.color);
+    for(const auto& b : t.rotations[rot]){
+        int c = p.x + b.x;
+        int r = p.y + b.y;
+        rect.setPosition((float)c*cellSize, (float)r*cellSize);
+        window.draw(rect);
+    }
+}
+
+void Tetris::draw(sf::RenderWindow& window){
+    drawGrid(window);
+    if(!gameOver){
+        drawPiece(window, current, pos, rotationIndex);
+    }
+    if(fontLoaded){
+        window.draw(uiText);
+        sf::Text nextLabel("Next:", font, 18);
+        nextLabel.setFillColor(sf::Color::White);
+        nextLabel.setPosition(cols*cellSize + 20, 60);
+        window.draw(nextLabel);
+    }
+    // Preview next usando coordenadas fuera del tablero (simple)
+    drawPiece(window, next, {cols + 2, 3}, 0);
+}
