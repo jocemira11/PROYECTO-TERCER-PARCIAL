@@ -1,0 +1,19 @@
+
+---
+
+### .gitignore
+```gitignore
+# Binarios y builds
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# VSCode y entorno
+.vscode/
+.DS_Store
+
+# Archivos temporales
+*.log
+*.tmp
