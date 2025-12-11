@@ -1,0 +1,18 @@
+CXX := g++
+CXXFLAGS := -std=c++17 -O2 -Iinclude
+LDFLAGS := -lsfml-graphics -lsfml-window -lsfml-system
+
+SRC := src/main.cpp src/Tetris.cpp
+BIN := bin/TetrisCreativo.exe
+
+all: $(BIN)
+
+$(BIN): $(SRC)
+    @mkdir -p bin
+    $(CXX) $(CXXFLAGS) -o $(BIN) $(SRC) $(LDFLAGS)
+
+runTetrisCreativo: $(BIN)
+    ./$(BIN)
+
+clean:
+    rm -f $(BIN)
